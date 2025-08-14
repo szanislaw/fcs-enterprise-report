@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import altair as alt
+import re
 
 # Load SQLCoder model
 @st.cache_resource
@@ -19,7 +20,7 @@ def load_model():
 tokenizer, model = load_model()
 
 # Connect to SQLite DB
-conn = sqlite3.connect("db/master-jo-co.db")
+conn = sqlite3.connect("db/master.db")
 
 # Show schema to user
 def get_schema():
@@ -28,19 +29,35 @@ def get_schema():
     for table in tables:
         cols = pd.read_sql(f"PRAGMA table_info({table});", conn)
         col_list = ", ".join(cols['name'])
-        schema += f"Table `{table}`: {col_list}\n"
+        schema += f"Table {table}: {col_list}\n"
     return schema
 
 schema_text = get_schema()
 
 # Translate NLQ to SQL
 def nl_to_sql(nlq):
-    prompt = f"""### Database Schema
+    prompt = f""" ### Task
+Generate a SQL query to answer the following question using the schema above:
+{nlq}
+
+### Database Schema
 {schema_text}
 
-### Task
-Generate a SQL query to answer the following question according to the schema above:
-{nlq}
+### Context
+You are an expert SQL developer. Always use the exact table names and column names from the schema above. Do not guess or pluralize table names.
+
+- Use `service_request` for all service request questions.
+- Use `payroll` for employee pay-related questions.
+- Use all `cleaning_` prefixed tables for cleaning operations.
+- For employee pay calculation questions **related to cleaning work**:
+    - Join the `payroll` table on `payroll.useer_uuid = cleaning_order.user_uuid` or any relevant `cleaning_*.user_uuid`.
+    - If the cleaning table contains `hours_worked`, calculate pay as `hours_worked * hourly_rate`.
+    - If the cleaning table contains `start_time` and `end_time`, calculate hours using `julianday(end_time) - julianday(start_time)` and multiply by 24 to get hours.
+    - Aggregate pay across all relevant shifts for the user.
+    - Use `employee_name` or partial name matches from the `payroll` table to filter the employee (e.g., `LOWER(employee_name) LIKE LOWER('%Huang Ying%')`).
+
+### Answer
+Given the database schema, here is the SQL query that answers `{nlq}`:
 """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     outputs = model.generate(
@@ -51,7 +68,27 @@ Generate a SQL query to answer the following question according to the schema ab
         pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
     )
     raw = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return raw.strip().split("\n")[-1]  # last line is often the SQL
+    sql = raw.strip().split("\n")[-1]
+
+    # Safely fix ILIKE → LOWER(col) LIKE LOWER('%value%') without prefixing table alias before LOWER()
+    sql = re.sub(
+        r"(\b\w+\.\w+)\s+ILIKE\s+'([^']*)'",
+        lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')",
+        sql,
+        flags=re.IGNORECASE
+    )
+
+    # Also fix LIKE similarly if needed
+    sql = re.sub(
+        r"(\b\w+\.\w+)\s+LIKE\s+'([^']*)'",
+        lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')",
+        sql,
+        flags=re.IGNORECASE
+    )
+    
+    print(prompt)
+
+    return sql
 
 # UI layout
 st.set_page_config(layout="wide")
