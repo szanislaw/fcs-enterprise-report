@@ -2,11 +2,16 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+import time
 import altair as alt
 import re
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# Load SQLCoder model
+# ─────────────────────────────────────────────────────────────────────────────
+# Model Loading with Timing
+# ─────────────────────────────────────────────────────────────────────────────
+model_load_start = time.time()
+
 @st.cache_resource
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
@@ -18,47 +23,75 @@ def load_model():
     return tokenizer, model
 
 tokenizer, model = load_model()
+model_load_time = time.time() - model_load_start
 
-# Connect to SQLite DB
+# ─────────────────────────────────────────────────────────────────────────────
+# Load Prompt Template
+# ─────────────────────────────────────────────────────────────────────────────
+with open("prompt/prompt.txt", "r", encoding="utf-8") as f:
+    prompt_template = f.read()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Connect to SQLite DB and Schema Fetching
+# ─────────────────────────────────────────────────────────────────────────────
 conn = sqlite3.connect("db/master.db")
 
-# Show schema to user
+@st.cache_data
 def get_schema():
-    tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)["name"].tolist()
-    schema = ""
+    tables = pd.read_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';",
+        conn)["name"].tolist()
+    
+    schema_md = ""
     for table in tables:
         cols = pd.read_sql(f"PRAGMA table_info({table});", conn)
-        col_list = ", ".join(cols['name'])
-        schema += f"Table {table}: {col_list}\n"
-    return schema
+        schema_md += f"### Table `{table}`\n"
+        schema_md += "| Column | Type |\n|--------|------|\n"
+        for _, col in cols.iterrows():
+            schema_md += f"| `{col['name']}` | `{col['type']}` |\n"
+        schema_md += "\n"
+    return schema_md
 
 schema_text = get_schema()
 
-# Translate NLQ to SQL
+# ─────────────────────────────────────────────────────────────────────────────
+# SQL Extraction Helper
+# ─────────────────────────────────────────────────────────────────────────────
+def extract_sql_from_output(output):
+    match = re.search(r"```sql\n(.*?)```", output, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    match = re.search(r"(SELECT .*?;)", output, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return output.strip().split("\n")[-1].strip()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SQL Fix Layer for SQLite Compatibility
+# ─────────────────────────────────────────────────────────────────────────────
+def apply_sql_fixes(sql):
+    # Fix ILIKE and LIKE
+    sql = re.sub(r"(\b\w+\.\w+)\s+ILIKE\s+'([^']*)'", lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"(\b\w+\.\w+)\s+LIKE\s+'([^']*)'", lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')", sql, flags=re.IGNORECASE)
+
+    # Replace EXTRACT with strftime (Month)
+    sql = re.sub(r"EXTRACT\s*\(\s*MONTH\s+FROM\s+([^)]+?)\s*\)", r"CAST(strftime('%m', \1) AS INTEGER)", sql)
+    sql = re.sub(r"EXTRACT\s*\(\s*YEAR\s+FROM\s+([^)]+?)\s*\)", r"CAST(strftime('%Y', \1) AS INTEGER)", sql)
+
+    # Remove PostgreSQL-style casts ::DATE
+    sql = re.sub(r"::\s*DATE", "", sql)
+
+    # Optional: Remove double-quoted column names if any
+    sql = sql.replace('"', '')
+
+    return sql
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NLQ to SQL Translation
+# ─────────────────────────────────────────────────────────────────────────────
 def nl_to_sql(nlq):
-    prompt = f""" ### Task
-Generate a SQL query to answer the following question using the schema above:
-{nlq}
-
-### Database Schema
-{schema_text}
-
-### Context
-You are an expert SQL developer. Always use the exact table names and column names from the schema above. Do not guess or pluralize table names.
-
-- Use `service_request` for all service request questions.
-- Use `payroll` for employee pay-related questions.
-- Use all `cleaning_` prefixed tables for cleaning operations.
-- For employee pay calculation questions **related to cleaning work**:
-    - Join the `payroll` table on `payroll.useer_uuid = cleaning_order.user_uuid` or any relevant `cleaning_*.user_uuid`.
-    - If the cleaning table contains `hours_worked`, calculate pay as `hours_worked * hourly_rate`.
-    - If the cleaning table contains `start_time` and `end_time`, calculate hours using `julianday(end_time) - julianday(start_time)` and multiply by 24 to get hours.
-    - Aggregate pay across all relevant shifts for the user.
-    - Use `employee_name` or partial name matches from the `payroll` table to filter the employee (e.g., `LOWER(employee_name) LIKE LOWER('%Huang Ying%')`).
-
-### Answer
-Given the database schema, here is the SQL query that answers `{nlq}`:
-"""
+    prompt = prompt_template.format(question=nlq, schema=schema_text)
+    start = time.time()
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     outputs = model.generate(
         **inputs,
@@ -68,31 +101,22 @@ Given the database schema, here is the SQL query that answers `{nlq}`:
         pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
     )
     raw = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    sql = raw.strip().split("\n")[-1]
+    sql = extract_sql_from_output(raw)
+    sql = apply_sql_fixes(sql)
+    st.session_state["sqlgen_time"] = time.time() - start
 
-    # Safely fix ILIKE → LOWER(col) LIKE LOWER('%value%') without prefixing table alias before LOWER()
-    sql = re.sub(
-        r"(\b\w+\.\w+)\s+ILIKE\s+'([^']*)'",
-        lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')",
-        sql,
-        flags=re.IGNORECASE
-    )
-
-    # Also fix LIKE similarly if needed
-    sql = re.sub(
-        r"(\b\w+\.\w+)\s+LIKE\s+'([^']*)'",
-        lambda m: f"LOWER({m.group(1)}) LIKE LOWER('%{m.group(2)}%')",
-        sql,
-        flags=re.IGNORECASE
-    )
-    
-    print(prompt)
+    print("💬 Prompt:\n", prompt)
+    print("🧠 Raw Output:\n", raw)
+    print("🛠️ Fixed SQL:\n", sql)
 
     return sql
 
-# UI layout
+# ─────────────────────────────────────────────────────────────────────────────
+# Streamlit UI
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(layout="wide")
-st.title("🧠 SQLCoder Query Assistant for Cleaning Facility DB")
+st.title("🧐 SQLCoder Query Assistant for Cleaning Facility DB")
+st.markdown(f"<p style='font-size: 0.8rem; color: gray;'>Model load time: {model_load_time:.4f} seconds</p>", unsafe_allow_html=True)
 
 with st.expander("📘 View Database Schema"):
     st.code(schema_text)
@@ -100,15 +124,18 @@ with st.expander("📘 View Database Schema"):
 question = st.text_input("🔎 Ask a question about the database:")
 
 if question:
+    total_start = time.time()
     sql_query = nl_to_sql(question)
     st.code(sql_query, language="sql")
 
     try:
+        query_start = time.time()
         df = pd.read_sql(sql_query, conn)
-        st.success(f"✅ Query returned {len(df)} rows")
-        st.dataframe(df, use_container_width=True)
+        st.session_state["query_time"] = time.time() - query_start
 
-        # Optional chart
+        # Charting
+        chart_start = time.time()
+        chart_rendered = False
         if not df.empty and df.select_dtypes(include=["number"]).shape[1] >= 1:
             st.subheader("📊 Quick Chart")
             numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -125,6 +152,26 @@ if question:
                 ).interactive()
 
                 st.altair_chart(chart, use_container_width=True)
+                chart_rendered = True
+
+        st.session_state["chart_time"] = time.time() - chart_start if chart_rendered else 0.0
+        st.success(f"✅ Query returned {len(df)} rows")
+        st.dataframe(df, use_container_width=True)
 
     except Exception as e:
         st.error(f"❌ Query failed: {e}")
+
+    total_time = time.time() - total_start
+    st.markdown("""
+    <div style='font-size: 0.8rem; color: gray;'>
+        📝 SQL Generation Time: {:.4f} s &nbsp; | &nbsp;
+        🧰 Query Execution Time: {:.4f} s &nbsp; | &nbsp;
+        📊 Chart Render Time: {:.4f} s &nbsp; | &nbsp;
+        ⏱️ Total Time: {:.4f} s
+    </div>
+    """.format(
+        st.session_state.get("sqlgen_time", 0),
+        st.session_state.get("query_time", 0),
+        st.session_state.get("chart_time", 0),
+        total_time
+    ), unsafe_allow_html=True)
