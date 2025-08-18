@@ -6,6 +6,7 @@ import time
 import altair as alt
 import re
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Model Loading with Timing
