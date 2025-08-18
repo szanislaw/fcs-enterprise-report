@@ -1,0 +1,22 @@
+### Task
+Generate ONE valid SQLite SQL query for `{question}`. Output only the SQL.  
+
+### Schema
+{schema}
+
+### Rules
+- staff joins: staff.property_id = properties.property_id  
+- service_requests joins: service_requests.assigned_staff_id = staff.staff_id  
+- cleaning_orders only for cleaning; service_requests only for requests (never join them).  
+- Rooms: always COUNT(DISTINCT service_requests.location).  
+  → Never use service_requests_id or anything from staff when counting rooms.  
+- Do not add status or service_category filters unless explicitly asked.  
+
+### Special
+- Redirected calls → service_item LIKE '%Call Redirect%'  
+- Aircon issues → service_item LIKE '%aircon%'  
+  OR (service_item LIKE '%air%' AND service_item LIKE '%con%')  
+  OR (remarks LIKE '%air%' AND remarks LIKE '%con%')  
+
+### Answer
+Here is the SQL:

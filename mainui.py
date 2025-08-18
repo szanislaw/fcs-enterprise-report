@@ -11,44 +11,44 @@ import os
 # # ─────────────────────────────────────────────────────────────────────────────
 # # Model Loading with Timing
 # # ─────────────────────────────────────────────────────────────────────────────
-# model_load_start = time.time()
-
-# @st.cache_resource
-# def load_model():
-#     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
-#     model = AutoModelForCausalLM.from_pretrained(
-#         "defog/sqlcoder-7b-2",
-#         torch_dtype=torch.float16,
-#         device_map="auto"
-#     )
-#     return tokenizer, model
-
-# tokenizer, model = load_model()
-# model_load_time = time.time() - model_load_start
-
 model_load_start = time.time()
 
 @st.cache_resource
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
-
-    # Quantisation config (8-bit for balance, switch to 4-bit if VRAM is tighter)
-    quant_config = BitsAndBytesConfig(
-        load_in_8bit=False,      # set to False and use load_in_4bit=True for max VRAM savings
-        load_in_4bit=True,
-        llm_int8_threshold=6.0, # keeps accuracy better by not quantising outliers
-        llm_int8_has_fp16_weight=True
-    )
-
     model = AutoModelForCausalLM.from_pretrained(
         "defog/sqlcoder-7b-2",
-        quantization_config=quant_config,
+        torch_dtype=torch.float16,
         device_map="auto"
     )
     return tokenizer, model
 
 tokenizer, model = load_model()
 model_load_time = time.time() - model_load_start
+
+# model_load_start = time.time()
+
+# @st.cache_resource
+# def load_model():
+#     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
+
+#     # Quantisation config (8-bit for balance, switch to 4-bit if VRAM is tighter)
+#     quant_config = BitsAndBytesConfig(
+#         load_in_8bit=False,      # set to False and use load_in_4bit=True for max VRAM savings
+#         load_in_4bit=True,
+#         llm_int8_threshold=6.0, # keeps accuracy better by not quantising outliers
+#         llm_int8_has_fp16_weight=True
+#     )
+
+#     model = AutoModelForCausalLM.from_pretrained(
+#         "defog/sqlcoder-7b-2",
+#         quantization_config=quant_config,
+#         device_map="auto"
+#     )
+#     return tokenizer, model
+
+# tokenizer, model = load_model()
+# model_load_time = time.time() - model_load_start
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load Prompt Template

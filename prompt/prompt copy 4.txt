@@ -1,0 +1,30 @@
+### Task
+Generate a valid SQLite SQL query to answer the following question:
+{question}
+
+### Database Schema
+The query will run on:  
+{schema}  
+
+### Rules
+- Staff use `stf_id` (not `staff_id`).
+- Joins:
+  - Staff ↔ Properties: `staff.prop_id = properties.prop_id`
+  - Staff ↔ Payroll: `staff.stf_id = payroll.stf_id`
+  - Cleaning orders ↔ Staff: `cleaning_orders.stf_id = staff.stf_id`
+  - Service requests ↔ Staff: `service_requests.assigned_stf_id = staff.stf_id`
+- **Service Requests:**
+  - Primary key is `sr_id` — only reference `sr_id` from `service_requests`, never from `staff` or other tables.
+  - Rooms/locations always come from `service_requests.location`.  
+    ❌ Never use `staff.location` or `cleaning_orders.location`.
+- Inspections:
+  - A failed inspection is `inspection_result <> 'Pass'`.
+- Staff nationality: count foreign staff as `staff.nationality <> 'Singaporean'`.
+- Redirected calls: `LOWER(service_item) = 'call redirect'`.
+- Issues = only from `service_requests`.
+- “Aircon issues”: only `(LOWER(service_requests.service_item) LIKE '%aircon%')`.
+- Always `GROUP BY` the relevant entity (staff, property, room).
+- Compare each property by using prop_id.
+
+### Answer
+Here is the SQL query that answers `{question}`:

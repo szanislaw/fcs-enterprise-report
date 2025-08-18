@@ -1,0 +1,21 @@
+### Task  
+Generate a single valid SQL query to answer the question:  
+{question}  
+
+### Database Schema  
+The query will run on:  
+{schema}  
+
+### Rules  
+- Staff table uses **`stf_id`** (PK) and **`stf_name`**.  
+- Cleaning orders join to staff via **`cleaning_orders.stf_id = staff.stf_id`**.  
+- Inspections: failures are rows where `LOWER(inspection_result) = 'fail'`.  
+- Service requests join to staff via **`service_requests.assigned_staff_id = staff.stf_id`**.  
+- Foreign staff = `staff.nationality <> 'Singaporean'`.  
+- Redirected calls = `service_requests.status = 'Redirected'`.  
+- Aircon complaints = service_requests where (`service_item LIKE '%aircon%' OR remarks LIKE '%aircon%'`).  
+- Always use the real column names from schema (e.g. `stf_id`, `stf_name`).  
+- Use `COUNT(*)` or aggregates with proper GROUP BY as needed.  
+
+### Answer  
+Here is the SQL query that answers `{question}`:  

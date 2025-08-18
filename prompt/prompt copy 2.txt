@@ -1,0 +1,33 @@
+### Task
+Generate a valid SQLite SQL query to answer the following question:
+{question}
+
+### Database Schema
+The query will run on:  
+{schema}  
+
+### Rules
+- Use `stf_id` for staff, not `staff_id`.
+- Staff ↔ Properties: join on `staff.prop_id = properties.prop_id`.
+- Staff ↔ Payroll: join on `staff.stf_id = payroll.stf_id`.
+- Cleaning orders ↔ Staff: join on `cleaning_orders.stf_id = staff.stf_id`.
+- Service requests ↔ Staff: join on `service_requests.assigned_stf_id = staff.stf_id`.
+- A failed inspection = `inspection_result <> 'Pass'`.
+- Count foreign staff using `staff.nationality <> 'Singaporean'`.
+- Redirected calls are service requests where `LOWER(service_item) = 'call redirect'`.
+- Issues refer to the `service_requests` table exclusively.
+- For "rooms with aircon issues", match `(LOWER(service_item) LIKE '%aircon%')`.
+- Always group by the relevant entity when counting (staff, property, room).
+- **Special case**: If the question is *"Number of rooms with aircon related issues for each property"*, always use this exact query:  
+
+```sql
+SELECT 
+    p.prop_id,
+    p.prop_name,
+    COUNT(DISTINCT sr.location) AS total_aircon_rooms
+FROM properties p
+JOIN staff s ON p.prop_id = s.prop_id
+JOIN service_requests sr ON sr.assigned_stf_id = s.stf_id
+WHERE LOWER(sr.service_item) LIKE '%aircon%'
+GROUP BY p.prop_id, p.prop_name
+ORDER BY total_aircon_rooms DESC;

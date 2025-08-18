@@ -1,0 +1,29 @@
+### Task
+Generate a SQL query to answer the following question:
+{question}
+
+### Database Schema
+The query will run on a database with the following schema:
+{schema}
+
+### Rules
+- Use `staff.staff_uuid` and `payroll.staff_uuid` for joining staff and payroll.
+- When calculating credits or earnings, use the column `job_weight` in `payroll` (not inspection_credit).
+- Exclusion reasons are stored in the `remarks` columns of cleaning_order_inspection or cleaning_order_detail.
+- Do not use `inspection_result` or `matrix_status` for exclusions unless explicitly asked.
+- When asked for common reasons, simply group by the `remarks` column and count frequencies.
+- Overdue cleaning orders are determined only from `cleaning_order.completed_date` and `cleaning_order.current_deadline`.
+- An order is overdue if:
+   • It is incomplete and `current_deadline < CURRENT_TIMESTAMP`, OR  
+   • It is completed but `completed_date > current_deadline`.
+- Do not use `status` in cleaning_order; it does not exist.
+- For shifts/attendants, group by `cleaning_order.assigned_name`.
+- For rooms, join `cleaning_order.location_uuid` with `location.location_uuid` and group by `location.room_number`.
+- Use SQLite syntax only (e.g., `datetime()` instead of PostgreSQL functions like `to_date` or `to_char`).
+- Do not invent columns that are not present in the schema.
+- In the service_type table, the identifier is `type_uuid`, the name is `type_name`, and the credit column is `job_weight` (renamed from credit).
+- For questions about **base credit definitions** of service types, use `service_type.job_weight` grouped by `service_type.type_name`.
+- For questions about **actual credits earned**, join `cleaning_order` with `payroll` and use `payroll.job_weight`.
+
+### Answer
+Given the database schema, here is the SQL query that answers `{question}`:
