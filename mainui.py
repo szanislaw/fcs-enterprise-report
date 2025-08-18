@@ -34,8 +34,8 @@ def load_model():
 
     # Quantisation config (8-bit for balance, switch to 4-bit if VRAM is tighter)
     quant_config = BitsAndBytesConfig(
-        load_in_8bit=True,      # set to False and use load_in_4bit=True for max VRAM savings
-        load_in_4bit=False,
+        load_in_8bit=False,      # set to False and use load_in_4bit=True for max VRAM savings
+        load_in_4bit=True,
         llm_int8_threshold=6.0, # keeps accuracy better by not quantising outliers
         llm_int8_has_fp16_weight=True
     )
