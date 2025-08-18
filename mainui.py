@@ -5,20 +5,44 @@ import torch
 import time
 import altair as alt
 import re
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import os
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Model Loading with Timing
-# ─────────────────────────────────────────────────────────────────────────────
+# # ─────────────────────────────────────────────────────────────────────────────
+# # Model Loading with Timing
+# # ─────────────────────────────────────────────────────────────────────────────
+# model_load_start = time.time()
+
+# @st.cache_resource
+# def load_model():
+#     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
+#     model = AutoModelForCausalLM.from_pretrained(
+#         "defog/sqlcoder-7b-2",
+#         torch_dtype=torch.float16,
+#         device_map="auto"
+#     )
+#     return tokenizer, model
+
+# tokenizer, model = load_model()
+# model_load_time = time.time() - model_load_start
+
 model_load_start = time.time()
 
 @st.cache_resource
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained("defog/sqlcoder-7b-2")
+
+    # Quantisation config (8-bit for balance, switch to 4-bit if VRAM is tighter)
+    quant_config = BitsAndBytesConfig(
+        load_in_8bit=True,      # set to False and use load_in_4bit=True for max VRAM savings
+        load_in_4bit=False,
+        llm_int8_threshold=6.0, # keeps accuracy better by not quantising outliers
+        llm_int8_has_fp16_weight=True
+    )
+
     model = AutoModelForCausalLM.from_pretrained(
         "defog/sqlcoder-7b-2",
-        torch_dtype=torch.float16,
+        quantization_config=quant_config,
         device_map="auto"
     )
     return tokenizer, model
