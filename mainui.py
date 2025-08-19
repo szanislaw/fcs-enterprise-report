@@ -139,23 +139,8 @@ def nl_to_sql(nlq):
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit UI
 # ─────────────────────────────────────────────────────────────────────────────
-
-st.set_page_config(
-    layout="wide",
-    page_title="SQLCoder Query Assistant for Hotel Operations",
-    page_icon="🧐",
-    initial_sidebar_state="expanded",
-    theme={
-        "base": "light",      # Force light mode
-        "primaryColor": "#2a9d8f",
-        "backgroundColor": "#ffffff",
-        "secondaryBackgroundColor": "#f5f5f5",
-        "textColor": "#000000",
-        "font": "sans serif"
-    }
-)
-
-st.title("SQLCoder Query Assistant for Hotel Operations")
+st.set_page_config(layout="wide")
+st.title("🧐 SQLCoder Query Assistant for Hotel Operations")
 st.markdown(f"<p style='font-size: 0.8rem; color: gray;'>Model load time: {model_load_time:.4f} seconds</p>", unsafe_allow_html=True)
 
 with st.expander("📘 View Database Schema"):
